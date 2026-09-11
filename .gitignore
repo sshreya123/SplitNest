@@ -1,0 +1,43 @@
+# Environment variables and secrets
+.env
+**/.env
+
+# Keep safe environment templates
+!.env.example
+!**/.env.example
+
+# Python
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node and frontend build
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# IDE settings
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Database exports
+*.backup
+*.dump
+
+# Temporary files
+*.tmp
+*.temp
