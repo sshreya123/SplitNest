@@ -58,30 +58,40 @@ export function useGroupRealtime(
         );
 
       const websocketUrl =
-        `${websocketBaseUrl}` +
-        `/ws/groups/${groupId}` +
-        `?token=${encodeURIComponent(
-          accessToken
-        )}`;
-
+  `${websocketBaseUrl}` +
+  `/ws/groups/${groupId}`;
       socket = new WebSocket(
         websocketUrl
       );
 
 
       socket.onopen = () => {
-        heartbeatTimer = setInterval(
-          () => {
-            if (
-              socket?.readyState ===
-              WebSocket.OPEN
-            ) {
-              socket.send("ping");
-            }
-          },
-          25000
-        );
-      };
+  if (
+    socket?.readyState !==
+    WebSocket.OPEN
+  ) {
+    return;
+  }
+
+  socket.send(
+    JSON.stringify({
+      type: "authenticate",
+      token: accessToken
+    })
+  );
+
+  heartbeatTimer = setInterval(
+    () => {
+      if (
+        socket?.readyState ===
+        WebSocket.OPEN
+      ) {
+        socket.send("ping");
+      }
+    },
+    25000
+  );
+};
 
 
       socket.onmessage = (

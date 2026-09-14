@@ -21,13 +21,19 @@ class GroupConnectionManager:
         self,
         group_id: UUID,
         websocket: WebSocket,
+        accept_connection: bool = True,
     ) -> None:
         """
-        Accept a browser connection and add it to
-        the correct group.
+        Add an authenticated browser connection
+        to the correct group.
+
+        The route can accept the WebSocket first
+        when authentication must happen through
+        the first message.
         """
 
-        await websocket.accept()
+        if accept_connection:
+            await websocket.accept()
 
         self.active_connections[
             group_id

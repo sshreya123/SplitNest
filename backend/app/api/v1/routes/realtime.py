@@ -1,8 +1,8 @@
+import asyncio
 from uuid import UUID
 
 from fastapi import (
     APIRouter,
-    Query,
     WebSocket,
     WebSocketDisconnect,
 )
@@ -23,6 +23,8 @@ from app.realtime.manager import (
 
 router = APIRouter()
 
+AUTHENTICATION_TIMEOUT_SECONDS = 5
+
 
 @router.websocket(
     "/groups/{group_id}"
@@ -30,11 +32,13 @@ router = APIRouter()
 async def group_websocket(
     websocket: WebSocket,
     group_id: UUID,
-    token: str = Query(...),
 ):
     """
     Connect an authenticated group member to
     real-time updates for one group.
+
+    Authentication is received through the first
+    WebSocket message instead of the URL.
     """
 
     allowed_origins = set(
@@ -57,19 +61,84 @@ async def group_websocket(
         await websocket.close(code=1008)
         return
 
+    # The socket must be accepted before the
+    # backend can receive its first message.
+    await websocket.accept()
+
+    try:
+        authentication_message = (
+            await asyncio.wait_for(
+                websocket.receive_json(),
+                timeout=(
+                    AUTHENTICATION_TIMEOUT_SECONDS
+                ),
+            )
+        )
+
+    except asyncio.TimeoutError:
+        await websocket.close(
+            code=1008,
+            reason="Authentication timed out",
+        )
+        return
+
+    except WebSocketDisconnect:
+        return
+
+    except ValueError:
+        await websocket.close(
+            code=1008,
+            reason="Invalid authentication message",
+        )
+        return
+
+    if (
+        not isinstance(
+            authentication_message,
+            dict,
+        )
+        or authentication_message.get("type")
+        != "authenticate"
+    ):
+        await websocket.close(
+            code=1008,
+            reason="Authentication required",
+        )
+        return
+
+    token = authentication_message.get(
+        "token"
+    )
+
+    if (
+        not isinstance(token, str)
+        or not token
+    ):
+        await websocket.close(
+            code=1008,
+            reason="Access token required",
+        )
+        return
+
     try:
         user_id = decode_access_token(
             token
         )
 
     except InvalidTokenError:
-        await websocket.close(code=1008)
+        await websocket.close(
+            code=1008,
+            reason="Invalid access token",
+        )
         return
 
     db = SessionLocal()
 
     try:
-        user = db.get(User, user_id)
+        user = db.get(
+            User,
+            user_id,
+        )
 
         membership = db.scalar(
             select(GroupMember).where(
@@ -86,25 +155,28 @@ async def group_websocket(
             or membership is None
         ):
             await websocket.close(
-                code=1008
+                code=1008,
+                reason="Group access denied",
             )
-
             return
 
     finally:
         db.close()
 
+    # The route has already accepted the socket.
+    # Therefore, the manager must not accept it again.
     await group_connection_manager.connect(
         group_id=group_id,
         websocket=websocket,
+        accept_connection=False,
     )
 
-    await websocket.send_json({
-        "type": "connection.ready",
-        "group_id": str(group_id),
-    })
-
     try:
+        await websocket.send_json({
+            "type": "connection.ready",
+            "group_id": str(group_id),
+        })
+
         while True:
             message = (
                 await websocket.receive_text()
@@ -116,12 +188,12 @@ async def group_websocket(
                 })
 
     except WebSocketDisconnect:
-        group_connection_manager.disconnect(
-            group_id=group_id,
-            websocket=websocket,
-        )
+        pass
 
     except Exception:
+        pass
+
+    finally:
         group_connection_manager.disconnect(
             group_id=group_id,
             websocket=websocket,
